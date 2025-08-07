@@ -1,6 +1,6 @@
 use axum::{
     routing::{get, post},
-    Json, Router,
+    Json, Router, extract::Query,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -11,6 +11,7 @@ use derive_more::From;
 use human_panic::setup_panic;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde_json;
+use time::{OffsetDateTime};
 use std::{
     env, error,
     fmt::{self, Debug, Display, Formatter},
@@ -19,7 +20,7 @@ use std::{
     ops::Not,
     time::Duration,
 };
-
+use zip::DateTime;
 /// A submodule that provides opaque types commonly used in the project
 use ck3_history_extractor::types;
 
@@ -43,10 +44,6 @@ use display::{GetPath, Renderer};
 /// A submodule for handling the game data
 use ck3_history_extractor::game_data;
 use game_data::{GameDataLoader, Localizable};
-
-/// A submodule for handling the arguments passed to the program
-use ck3_history_extractor::args;
-use args::Args;
 
 /// A submodule for handling Steam integration
 use ck3_history_extractor::steam;
@@ -93,9 +90,9 @@ async fn main() {
     // 构建路由
     let app = Router::new()
         .route("/", get(root_handler))
-        .route("/echo", post(echo_handler))
-        .route("/jsonUp", post(game_state_handler))
-        .route("/log", get(|| async { "Server is running!" }));
+        .route("/v1", get(v1_handler))
+        .route("/v1/status", get(status_handler))
+        .route("/v1/responses", post(responses_handler));
 
 
     // 绑定地址
@@ -110,10 +107,6 @@ async fn root_handler() -> &'static str {
     "Welcome to ck3 rust server!"
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct EchoPayload {
-    message: String,
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ApiResponse {
@@ -122,25 +115,52 @@ struct ApiResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct ApiResponseWithData<T> {
+struct ResponsesReceivePayload {
+    input: String,
+    previous_id: Option<String>,
+    screenshot: Option<String>,
+    file_address: String,
+    stream: bool
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ResponsesReturnPayload {
+    created_at: OffsetDateTime,
+    id: String,
+    output: String,
     code: i32,
-    message: String,
-    data: T,
 }
 
-async fn echo_handler(Json(payload): Json<EchoPayload>) -> Json<EchoPayload> {
-    Json(payload)
+#[derive(Debug, Deserialize, Serialize)]
+struct MyQuery {
+    id: String,
 }
 
-async fn game_state_handler(Json(payload): Json<Value>) -> Json<ApiResponse> {
-    // TODO: Implement game state logic here
+async fn v1_handler() -> Json<ApiResponse> {
     let response = ApiResponse {
         code: 200,
-        message: "Game state received".to_string(),
+        message: "API v1 is working".to_string(),
     };
     Json(response)
 }
 
-async fn log_handler(Json(payload): Json<Value>) {
-    // TODO: Implement logging logic here
+async fn responses_handler(Json(payload) : Json<ResponsesReceivePayload>) -> Json<ResponsesReturnPayload> {
+    // TODO: Responses handling logic
+    let now_time = OffsetDateTime::now_utc();
+    let response = ResponsesReturnPayload {
+        created_at: now_time,
+        id: "some_unique_id".to_string(), // TODO: Get a unique ID from the actual logic
+        output: format!("Received input: {}", payload.input), // TODO: Return the actual output
+        code: 200,
+    };
+    Json(response)
+}
+
+async fn status_handler(Query(params): Query<MyQuery>) -> Json<ApiResponse> {
+    // TODO: Complete the status handler logic
+    let response = ApiResponse {
+        code: 200,
+        message: "Server is running".to_string(),
+    };
+    Json(response)
 }

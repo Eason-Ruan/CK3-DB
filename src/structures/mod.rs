@@ -1,7 +1,12 @@
 use std::{
     any::type_name,
+    any::TypeId,
     hash::{Hash, Hasher},
+    sync::atomic::{AtomicI64, Ordering},
 };
+
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
 
 use super::{
     game_data::{GameData, Localizable, LocalizationError},
@@ -70,6 +75,26 @@ pub trait GameObjectDerived: Sized {
 
     /// Extends the provided collection with references to other [GameObjectDerived] objects, if any.
     fn get_references<E: From<EntityRef>, C: Extend<E>>(&self, collection: &mut C);
+}
+
+static COUNTERS: Lazy<DashMap<TypeId, AtomicI64>> = Lazy::new(DashMap::new);
+
+fn next_id_for<T: 'static>() -> i64 {
+    let entry = COUNTERS
+        .entry(TypeId::of::<T>())
+        .or_insert_with(|| AtomicI64::new(1));
+    entry.fetch_add(1, Ordering::Relaxed)
+}
+
+pub trait SqlBinding {
+    /// Binds the object to the provided SQL query.
+    /// This is used to export the object to a database.
+    const SQL: &'static str;
+
+    async fn export_to_sql(
+        &self,
+        pool: &sqlx::SqlitePool,
+    ) -> Result<(), sqlx::Error>;
 }
 
 #[derive(Serialize, Debug)]

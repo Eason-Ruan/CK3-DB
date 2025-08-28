@@ -1,21 +1,17 @@
 use jomini::common::Date;
 
 use serde::Serialize;
-
-use super::{
-    super::{
-        display::{ProceduralPath, Renderable},
-        game_data::{GameData, Localizable, LocalizationError, Localize},
-        jinja_env::HOUSE_TEMPLATE_NAME,
-        parser::{
-            GameObjectMap, GameObjectMapping, GameState, KeyError, ParsingError, SaveFileValue,
-            SaveObjectError,
-        },
-        types::{GameString, HashMap, Wrapper, WrapperMut},
+use sqlx::{Error, SqlitePool};
+use super::{super::{
+    display::{ProceduralPath, Renderable},
+    game_data::{GameData, Localizable, LocalizationError, Localize},
+    jinja_env::HOUSE_TEMPLATE_NAME,
+    parser::{
+        GameObjectMap, GameObjectMapping, GameState, KeyError, ParsingError, SaveFileValue,
+        SaveObjectError,
     },
-    Character, Culture, Dynasty, EntityRef, Faith, FromGameObject, GameObjectDerived,
-    GameObjectEntity, GameRef,
-};
+    types::{GameString, HashMap, Wrapper, WrapperMut},
+}, Character, Culture, Dynasty, EntityRef, Faith, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, SqlEntityBinding, date_to_native_date};
 
 #[derive(Serialize)]
 pub struct House {
@@ -251,5 +247,52 @@ impl ProceduralPath for House {
 impl Renderable for GameObjectEntity<House> {
     fn get_template() -> &'static str {
         HOUSE_TEMPLATE_NAME
+    }
+}
+
+impl SqlEntityBinding for House {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+                    INSERT OR IGNORE INTO houses (id, name, found_date, meta_id)
+                    VALUES (?, ?, ?, ?)
+                    "#
+        )
+            .bind(entity_id)
+            .bind(self.name.to_string())
+            .bind(self.found_date.as_ref().map(|d| date_to_native_date(d)))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for leader in &self.leaders {
+            sqlx::query(
+                r#"
+                    INSERT OR IGNORE INTO houses_leaders (house_id, leader_id, meta_id)
+                    VALUES (?, ?, ?)
+                    "#
+            )
+                .bind(entity_id)
+                .bind(leader.get_internal().id)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for (motto, item) in &self.motto{
+            for (time, by_name) in item{
+                sqlx::query(
+                    r#"
+                    INSERT OR IGNORE INTO houses_mottos (motto, time, by_name, meta_id)
+                    VALUES (?, ?, ?, ?)
+                    "#
+                )
+                    .bind(motto.to_string())
+                    .bind(time)
+                    .bind(by_name.to_string())
+                    .bind(meta_id)
+                    .execute(pool)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 }

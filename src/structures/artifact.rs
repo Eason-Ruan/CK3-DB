@@ -1,16 +1,14 @@
 use jomini::common::Date;
 use serde::Serialize;
-
+use sqlx::{Error, SqlitePool, query};
+use chrono::NaiveDateTime;
 use crate::types::Wrapper;
 
-use super::{
-    super::{
-        game_data::{GameData, Localizable, LocalizationError, Localize},
-        parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
-        types::GameString,
-    },
-    Character, EntityRef, FromGameObject, GameObjectDerived, GameRef,
-};
+use super::{super::{
+    game_data::{GameData, Localizable, LocalizationError, Localize},
+    parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
+    types::GameString,
+}, Character, EntityRef, FromGameObject, GameObjectDerived, GameRef, SqlEntityBinding, date_to_native_date};
 
 #[derive(Serialize)]
 pub struct Artifact {
@@ -148,5 +146,40 @@ impl Serialize for GameRef<Artifact> {
         S: serde::Serializer,
     {
         self.get_internal().serialize(serializer)
+    }
+}
+
+impl SqlEntityBinding for Artifact {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        for (game_str, date, from_char, to_char) in &self.history  {
+            sqlx::query(r#"
+            INSERT INTO artifacts_history(artifact_id, info, date, character_from_id, character_to_id, meta_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(game_str.to_string())
+                .bind(date_to_native_date(date))
+                .bind(from_char.as_ref().unwrap().get_internal().get_id() as i64)
+                .bind(to_char.as_ref().unwrap().get_internal().get_id() as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        sqlx::query(r#"
+        INSERT INTO artifacts (id, name, description, rarity, type, quality, wealth, owner_id, meta_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#)
+            .bind(entity_id)
+            .bind(self.name.to_string())
+            .bind(self.description.to_string())
+            .bind(self.rarity.to_string())
+            .bind(self.r#type.to_string())
+            .bind(self.quality as i64)
+            .bind(self.wealth as i64)
+            .bind(self.owner.get_internal().get_id() as i64)
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 }

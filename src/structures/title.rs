@@ -7,21 +7,17 @@ use std::{
 
 use jomini::common::{Date, PdsDate};
 use serde::Serialize;
-
-use super::{
-    super::{
-        display::{Grapher, ProceduralPath, Renderable, TreeNode},
-        game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
-        jinja_env::TITLE_TEMPLATE_NAME,
-        parser::{
-            GameObjectMap, GameObjectMapping, GameState, ParsingError, SaveFileObject,
-            SaveFileValue,
-        },
-        types::{GameString, Wrapper, WrapperMut},
+use sqlx::{Error, SqlitePool};
+use super::{super::{
+    display::{Grapher, ProceduralPath, Renderable, TreeNode},
+    game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
+    jinja_env::TITLE_TEMPLATE_NAME,
+    parser::{
+        GameObjectMap, GameObjectMapping, GameState, ParsingError, SaveFileObject,
+        SaveFileValue,
     },
-    Character, Culture, EntityRef, Faith, FromGameObject, GameObjectDerived, GameObjectEntity,
-    GameRef,
-};
+    types::{GameString, Wrapper, WrapperMut},
+}, date_to_native_date, Character, Culture, EntityRef, Faith, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, SqlEntityBinding};
 
 #[derive(Serialize)]
 pub struct TitleData {
@@ -396,6 +392,73 @@ impl Localizable for Title {
         //for o in self.history.iter_mut() {
         //    o.2 = localization.localize(o.2.as_str());
         //}
+        Ok(())
+    }
+}
+
+impl SqlEntityBinding for Title {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        let (tier, county_ref) = match self {
+            Title::Empire(d) => {("Empire", None)},
+            Title::Kingdom(d) => {("Kingdom", None)},
+            Title::Duchy(d) => {("Duchy", None)},
+            Title::County {data, culture, faith} => {("County", Some((culture, faith)))},
+            Title::Barony(d) => {("Barony", None)},
+            Title::Other(d) => {("Other", None)},
+        };
+        let ref_id = county_ref.map(|(c, f)| {
+            (
+                c.as_ref().map(|c| c.get_internal().get_id() as i64),
+                f.as_ref().map(|f| f.get_internal().get_id() as i64),
+            )
+        });
+        sqlx::query(
+            r#"
+                    INSERT OR IGNORE INTO titles(id, key, name, tier, color_red, color_green, color_blue, de_jure_liege_id, de_facto_liege_id, county_culture, county_faith, capital_id, meta_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#
+        )
+            .bind(entity_id)
+            .bind(self.key.to_string())
+            .bind(self.name.to_string())
+            .bind(tier)
+            .bind(self.color[0] as i64)
+            .bind(self.color[1] as i64)
+            .bind(self.color[2] as i64)
+            .bind(self.de_jure.as_ref().map(|t| t.get_internal().get_id() as i64))
+            .bind(self.de_facto.as_ref().map(|t| t.get_internal().get_id() as i64))
+            .bind(ref_id.map(|(c, _)| c))
+            .bind(ref_id.map(|(_, f)| f))
+            .bind(self.capital.as_ref().map(|c| c.get_internal().get_id() as i64))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for (date, char_opt, action) in &self.history {
+            sqlx::query(r#"
+                INSERT INTO title_history(title_id, date, holder_id, action, meta_id)
+                VALUES (?, ?, ?, ?, ?)
+                "#
+            )
+                .bind(entity_id)
+                .bind(date_to_native_date(date))
+                .bind(char_opt.as_ref().map(|c| c.get_internal().get_id() as i64))
+                .bind(action.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for claim in &self.claims {
+            sqlx::query(r#"
+                INSERT INTO title_claims (title_id, claimant_id, meta_id)
+                VALUES (?, ?, ?)
+                "#
+            )
+                .bind(entity_id)
+                .bind(claim.get_internal().id)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
         Ok(())
     }
 }

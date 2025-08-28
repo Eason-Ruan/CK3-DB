@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use serde::Serialize;
-
+use sqlx::{Error, SqlitePool};
 use super::{
     super::{
         display::{Grapher, ProceduralPath, Renderable},
@@ -10,7 +10,7 @@ use super::{
         parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError, SaveFileValue},
         types::{GameString, HashMap, Wrapper},
     },
-    Character, EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, House,
+    Character, EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, House, SqlEntityBinding
 };
 
 #[derive(Serialize)]
@@ -185,3 +185,49 @@ impl Localizable for Dynasty {
         Ok(())
     }
 }
+impl SqlEntityBinding for Dynasty {
+     async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+         sqlx::query(
+             r#"
+                    INSERT OR IGNORE INTO dynasties (id, name, prestige_total, prestige_current, leader_id, meta_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    "#
+         )
+             .bind(entity_id)
+             .bind(self.name.as_ref().map(|n| n.to_string()))
+             .bind(self.prestige_tot)
+             .bind(self.prestige)
+             .bind(self.leader.as_ref().map(|c| c.get_internal().get_id() as i64))
+             .bind(meta_id)
+             .execute(pool)
+             .await?;
+         for (perk, level) in &self.perks {
+            sqlx::query(
+                r#"
+                INSERT INTO dynasty_perks (dynasty_id, perk_name, level, meta_id)
+                VALUES (?, ?, ?, ?)
+                "#
+            )
+                .bind(entity_id)
+                .bind(perk.to_string())
+                .bind(*level as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+         }
+         for house in &self.houses {
+             sqlx::query(
+                    r#"
+                    INSERT INTO dynasty_houses(dynasty_id, house_id, meta_id)
+                    VALUES (?, ?, ?)
+                    "#
+                )
+                    .bind(entity_id)
+                    .bind(house.get_internal().get_id() as i64)
+                    .bind(meta_id)
+                    .execute(pool)
+                    .await?;
+         }
+         Ok(())
+     }
+ }

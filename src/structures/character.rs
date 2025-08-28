@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use jomini::common::Date;
 use serde::Serialize;
-
+use sqlx::{Error, SqlitePool};
 use super::{
     super::{
         display::{ProceduralPath, Renderable, TreeNode},
@@ -12,7 +12,7 @@ use super::{
         types::{GameString, Shared, Wrapper, WrapperMut},
     },
     Artifact, Culture, EntityRef, Faith, FromGameObject, GameObjectDerived, GameObjectEntity,
-    GameRef, House, Memory, Title,
+    GameRef, House, Memory, Title, SqlEntityBinding, date_to_native_date
 };
 
 /// An enum that holds either a character or a reference to a character.
@@ -39,10 +39,10 @@ pub struct Character {
     faith: Option<GameRef<Faith>>,
     culture: Option<GameRef<Culture>>,
     house: Option<GameRef<House>>,
-    skills: Vec<i8>,
+    skills: Vec<i8>, // TODO: Re-confirm order
     traits: Vec<GameString>,
     spouses: HashSet<GameRef<Character>>,
-    former: Vec<GameRef<Character>>,
+    former: Vec<GameRef<Character>>, // TODO: what is this
     children: Vec<GameRef<Character>>,
     parents: Vec<GameRef<Character>>,
     dna: Option<GameString>,
@@ -584,6 +584,199 @@ impl Localizable for Character {
         }
         for t in self.languages.iter_mut() {
             *t = localization.localize(t.to_string() + "_name")?;
+        }
+        Ok(())
+    }
+}
+
+impl SqlEntityBinding for Character{
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        sqlx::query(r#"
+            INSERT INTO characters(id, name, nick, birth_date, death_date, death_reason, is_female, is_dead, gold, piety, prestige, dread, strength, diplomacy_skill, martial_skill, stewardship_skill, learning_skill, intrigue_skill, prowess_skill, faith_id, culture_id, house_id, liege_id, dna, meta_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#)
+            .bind(entity_id)
+            .bind(self.name.to_string())
+            .bind(date_to_native_date(&self.birth))
+            .bind(self.date.as_ref().map(|d| date_to_native_date(d)))
+            .bind(self.reason.as_ref().map(|r| r.to_string()))
+            .bind(self.female)
+            .bind(self.dead)
+            .bind(self.gold)
+            .bind(self.piety)
+            .bind(self.prestige)
+            .bind(self.dread)
+            .bind(self.strength)
+            .bind(self.skills.get(0).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.skills.get(1).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.skills.get(2).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.skills.get(3).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.skills.get(4).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.skills.get(5).map(|s| *s as i64).unwrap_or(0))
+            .bind(self.faith.as_ref().map(|f| f.get_internal().get_id() as i64))
+            .bind(self.culture.as_ref().map(|c| c.get_internal().get_id() as i64))
+            .bind(self.house.as_ref().map(|h| h.get_internal().get_id() as i64))
+            .bind(self.liege.as_ref().map(|l| l.get_internal().get_id() as i64))
+            .bind(self.dna.as_ref().map(|d| d.to_string()))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for t in &self.traits {
+            sqlx::query(r#"
+            INSERT INTO character_traits(character_id, trait_name, meta_id)
+            VALUES (?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(t.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for s in &self.spouses {
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_relationships (character_id, related_character_id, relationship_type, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(s.get_internal().get_id() as i64)
+                .bind("spouse")
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for f in &self.former {
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_relationships (character_id, related_character_id, relationship_type, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(f.get_internal().get_id() as i64)
+                .bind("former")
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for child in &self.children {
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_relationships (character_id, related_character_id, relationship_type, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(child.get_internal().get_id() as i64)
+                .bind("child")
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for parent in &self.parents {
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_relationships (character_id, related_character_id, relationship_type, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(parent.get_internal().get_id() as i64)
+                .bind("parent")
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for m in&self.memories{
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_memories (character_id, memory_id, meta_id)
+            VALUES (?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(m.get_internal().id)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        let mut title_iter = self.titles.iter();
+        if let Some(first) = title_iter.next() {
+            // TODO: Confirm the first title
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_titles (character_id, title_id, is_primary, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(first.get_internal().id)
+                .bind(true)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for t in title_iter {
+            sqlx::query(r#"
+            INSERT OR REPLACE INTO character_titles (character_id, title_id, is_primary, meta_id)
+            VALUES (?, ?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(t.get_internal().id)
+                .bind(false)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for k in &self.kills {
+            sqlx::query(r#"
+            INSERT INTO character_kills (killer_id, victim_id, meta_id)
+            VALUES (?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(k.get_internal().get_id() as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for l in &self.languages {
+            sqlx::query(r#"
+            INSERT INTO character_languages (character_id, language, meta_id)
+            VALUES (?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(l.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for v in &self.vassals {
+            match v {
+                Vassal::Character(c) => {
+                    sqlx::query(r#"
+                    INSERT INTO character_vassals (liege_id, vassal_id, meta_id)
+                    VALUES (?, ?, ?)
+                    "#)
+                        .bind(entity_id)
+                        .bind(c.get_internal().get_id() as i64)
+                        .bind(meta_id)
+                        .execute(pool)
+                        .await?;
+                }
+                Vassal::Reference(c) => {
+                    if let Some(c) = c.get_internal().as_ref() {
+                        sqlx::query(r#"
+                        INSERT INTO character_vassals (liege_id, vassal_id, meta_id)
+                        VALUES (?, ?, ?)
+                        "#)
+                            .bind(entity_id)
+                            .bind(c.get_internal().get_id() as i64)
+                            .bind(meta_id)
+                            .execute(pool)
+                            .await?;
+                    }
+                }
+            }
+        }
+        for a in &self.artifacts {
+            sqlx::query(r#"
+            INSERT INTO character_artifacts (character_id, artifact_id, meta_id)
+            VALUES (?, ?, ?)
+            "#)
+                .bind(entity_id)
+                .bind(a.get_internal().id as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
         }
         Ok(())
     }

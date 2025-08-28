@@ -1,6 +1,6 @@
 use jomini::common::Date;
 use serde::Serialize;
-
+use sqlx::{Error, SqlitePool};
 use super::{
     super::{
         game_data::{GameData, Localizable, LocalizationError, Localize},
@@ -10,7 +10,7 @@ use super::{
         },
         types::{GameId, GameString, HashMap, Wrapper},
     },
-    Character, EntityRef, FromGameObject, GameObjectDerived, GameRef,
+    Character, EntityRef, FromGameObject, GameObjectDerived, GameRef, SqlEntityBinding, date_to_native_date
 };
 
 #[derive(Serialize, Clone, Debug)]
@@ -199,5 +199,58 @@ impl Serialize for GameRef<Memory> {
         S: serde::Serializer,
     {
         self.get_internal().serialize(serializer)
+    }
+}
+
+impl SqlEntityBinding for Memory {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+                    INSERT OR IGNORE INTO memories (id, type, date, meta_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    "#
+        )
+            .bind(entity_id)
+            .bind(self.r#type.to_string())
+            .bind(date_to_native_date(&self.date))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for (role, character) in &self.participants {
+            sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO memory_participants (memory_id, role, character_id, meta_id)
+                VALUES (?, ?, ?, ?)
+                "#
+            )
+                .bind(entity_id)
+                .bind(role.to_string())
+                .bind(character.get_internal().get_id() as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for (key, value) in &self.variables {
+            let (var_type, var_value) = match value {
+                MemoryVariable::Id(id) => ("id", id.to_string()),
+                MemoryVariable::String(s) => ("string", s.to_string()),
+                MemoryVariable::Bool(b) => ("bool", b.to_string()),
+                MemoryVariable::None => ("none", "none".to_string()),
+            };
+            sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO memory_variables (memory_id, var_name, var_type, var_value, meta_id)
+                VALUES (?, ?, ?, ?, ?)
+                "#
+            )
+                .bind(entity_id)
+                .bind(key.to_string())
+                .bind(var_type)
+                .bind(var_value)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        Ok(())
     }
 }

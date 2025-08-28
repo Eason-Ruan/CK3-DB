@@ -1,17 +1,14 @@
 use std::path::Path;
 
 use serde::Serialize;
-
-use super::{
-    super::{
-        display::{Grapher, ProceduralPath, Renderable},
-        game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
-        jinja_env::FAITH_TEMPLATE_NAME,
-        parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
-        types::{GameString, Wrapper},
-    },
-    Character, EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, Title,
-};
+use sqlx::{Error, SqlitePool};
+use super::{super::{
+    display::{Grapher, ProceduralPath, Renderable},
+    game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
+    jinja_env::FAITH_TEMPLATE_NAME,
+    parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
+    types::{GameString, Wrapper},
+}, Character, EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, SqlEntityBinding, Title};
 
 /// A struct representing a faith in the game
 #[derive(Serialize)]
@@ -131,6 +128,52 @@ impl Localizable for Faith {
         }
         for doctrine in self.doctrines.iter_mut() {
             *doctrine = localization.localize(doctrine.to_string() + "_name")?;
+        }
+        Ok(())
+    }
+}
+
+impl SqlEntityBinding for Faith {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+                    INSERT OR IGNORE INTO faiths(id, name, fervor, head_title_id, head_id, meta_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    "#
+        )
+            .bind(entity_id)
+            .bind(self.name.to_string())
+            .bind(self.fervor)
+            .bind(self.head_title.as_ref().map(|hd| hd.get_internal().id))
+            .bind(self.head.as_ref().map(|h| h.get_internal().id))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for tenet in &self.tenets{
+            sqlx::query(
+                r#"
+                        INSERT OR IGNORE INTO faith_tenets(faith_id, tenet_name, meta_id)
+                        VALUES (?, ?, ?)
+                        "#
+            )
+                .bind(entity_id)
+                .bind(tenet.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for doctrine in &self.doctrines{
+            sqlx::query(
+                r#"
+                        INSERT OR IGNORE INTO faith_doctrines(faith_id, doctrine_name, meta_id)
+                        VALUES (?, ?, ?)
+                        "#
+            )
+                .bind(entity_id)
+                .bind(doctrine.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
         }
         Ok(())
     }

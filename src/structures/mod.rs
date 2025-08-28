@@ -2,17 +2,16 @@ use std::{
     any::type_name,
     any::TypeId,
     hash::{Hash, Hasher},
-    sync::atomic::{AtomicI64, Ordering},
 };
-
-use dashmap::DashMap;
-use once_cell::sync::Lazy;
 
 use super::{
     game_data::{GameData, Localizable, LocalizationError},
     parser::{GameObjectMap, GameRef, GameState, ParsingError},
     types::{GameId, GameString, Wrapper, WrapperMut},
 };
+
+use chrono::NaiveDate;
+use jomini::common::{Date, PdsDate};
 
 /// A submodule that provides the [Player] object.
 mod player;
@@ -77,26 +76,31 @@ pub trait GameObjectDerived: Sized {
     fn get_references<E: From<EntityRef>, C: Extend<E>>(&self, collection: &mut C);
 }
 
-static COUNTERS: Lazy<DashMap<TypeId, AtomicI64>> = Lazy::new(DashMap::new);
-
-fn next_id_for<T: 'static>() -> i64 {
-    let entry = COUNTERS
-        .entry(TypeId::of::<T>())
-        .or_insert_with(|| AtomicI64::new(1));
-    entry.fetch_add(1, Ordering::Relaxed)
-}
-
-pub trait SqlBinding {
+pub trait SqlEntityBinding {
     /// Binds the object to the provided SQL query.
     /// This is used to export the object to a database.
-    const SQL: &'static str;
-
     async fn export_to_sql(
         &self,
         pool: &sqlx::SqlitePool,
+        meta_id: i64,
+        entity_id: i64,
+    ) -> Result<(), sqlx::Error>;
+}
+pub trait EntityWithSQL {
+    async fn export_to_sql(
+        &self,
+        pool: &sqlx::SqlitePool,
+        meta_id: i64,
     ) -> Result<(), sqlx::Error>;
 }
 
+pub fn date_to_native_date(date: &Date) -> String {
+    let y = date.year();
+    let m = date.month();
+    let d = date.day();
+    let naive = NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32).unwrap();
+    naive.format("%Y-%m-%d").to_string()
+}
 #[derive(Serialize, Debug)]
 pub struct GameObjectEntity<T: GameObjectDerived> {
     id: GameId,

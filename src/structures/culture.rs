@@ -2,17 +2,14 @@ use std::path::Path;
 
 use jomini::common::Date;
 use serde::Serialize;
-
-use super::{
-    super::{
-        display::{Grapher, ProceduralPath, Renderable, TreeNode},
-        game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
-        jinja_env::CUL_TEMPLATE_NAME,
-        parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
-        types::{GameString, Wrapper, WrapperMut},
-    },
-    EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, Title,
-};
+use sqlx::{Error, SqlitePool};
+use super::{super::{
+    display::{Grapher, ProceduralPath, Renderable, TreeNode},
+    game_data::{GameData, Localizable, LocalizationError, Localize, MapGenerator, MapImage},
+    jinja_env::CUL_TEMPLATE_NAME,
+    parser::{GameObjectMap, GameObjectMapping, GameState, ParsingError},
+    types::{GameString, Wrapper, WrapperMut},
+}, EntityRef, FromGameObject, GameObjectDerived, GameObjectEntity, GameRef, Title, SqlEntityBinding, date_to_native_date};
 
 /// A struct representing a culture in the game
 #[derive(Serialize)]
@@ -186,6 +183,80 @@ impl Localizable for Culture {
         }
         for (era, _, _) in &mut self.eras {
             *era = localization.localize(era.to_string())?;
+        }
+        Ok(())
+    }
+}
+impl SqlEntityBinding for Culture {
+    async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+                    INSERT INTO cultures (id, name, ethos, heritage, martial, language, date, meta_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    "#
+        )
+            .bind(entity_id)
+            .bind(self.name.to_string())
+            .bind(self.ethos.as_ref().map(|rc| rc.to_string()).unwrap_or_default())
+            .bind(self.heritage.to_string())
+            .bind(self.martial.to_string())
+            .bind(self.date.as_ref().map(|rc | date_to_native_date(rc)).unwrap_or("".to_string()))
+            .bind(meta_id)
+            .execute(pool)
+            .await?;
+        for tradition in &self.traditions {
+            sqlx::query(
+                r#"
+                    INSERT OR IGNORE INTO culture_traditions (culture_id, tradition_name, meta_id)
+                    VALUES (?, ?, ?)
+                    "#
+            )
+                .bind(entity_id)
+                .bind(tradition.to_string())
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for (era, begin, end) in &self.eras {
+            sqlx::query(
+                r#"
+                    INSERT OR IGNORE INTO culture_eras (culture_id, info, begin_era, end_era, meta_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    "#
+            )
+                .bind(entity_id)
+                .bind(era.to_string())
+                .bind(begin.map(|u| u as i64).unwrap_or(-1))
+                .bind(end.map(|u| u as i64).unwrap_or(-1))
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for parent in &self.parents {
+            sqlx::query(
+                r#"
+                    INSERT OR IGNORE INTO culture_trees (parent_culture_id, child_culture_id, meta_id)
+                    VALUES (?, ?, ?)
+                    "#
+            )
+                .bind(parent.get_internal().id as i64)
+                .bind(entity_id)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
+        }
+        for child in &self.children {
+            sqlx::query(
+                r#"
+                    INSERT OR IGNORE INTO culture_trees (parent_culture_id, child_culture_id, meta_id)
+                    VALUES (?, ?, ?)
+                    "#
+            )
+                .bind(entity_id)
+                .bind(child.get_internal().id as i64)
+                .bind(meta_id)
+                .execute(pool)
+                .await?;
         }
         Ok(())
     }

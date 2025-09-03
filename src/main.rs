@@ -42,6 +42,7 @@ use args::Args;
 
 /// A submodule for handling Steam integration
 mod steam;
+mod sql_util;
 
 /// The interval at which the progress bars should update.
 const INTERVAL: Duration = Duration::from_secs(1);

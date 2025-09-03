@@ -1,6 +1,5 @@
 use std::{
     any::type_name,
-    any::TypeId,
     hash::{Hash, Hasher},
 };
 
@@ -84,13 +83,6 @@ pub trait SqlEntityBinding {
         pool: &sqlx::SqlitePool,
         meta_id: i64,
         entity_id: i64,
-    ) -> Result<(), sqlx::Error>;
-}
-pub trait EntityWithSQL {
-    async fn export_to_sql(
-        &self,
-        pool: &sqlx::SqlitePool,
-        meta_id: i64,
     ) -> Result<(), sqlx::Error>;
 }
 
@@ -276,5 +268,36 @@ impl GameObjectDerived for EntityRef {
                 .inner()
                 .map(|v| v.get_references(collection)),
         };
+    }
+}
+impl<T> SqlEntityBinding for GameObjectEntity<T> where T: SqlEntityBinding + GameObjectDerived + FromGameObject, {
+    async fn export_to_sql(
+        &self,
+        pool: &sqlx::SqlitePool,
+        meta_id: i64,
+        entity_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        if let Some(inner) = self.inner() {
+            inner.export_to_sql(pool, meta_id, entity_id).await
+        } else {
+            // 未初始化的占位对象，按需选择：直接成功返回或返回错误
+            Ok(())
+        }
+    }
+}
+
+impl<T> SqlEntityBinding for GameRef<T>
+where
+    T: SqlEntityBinding + GameObjectDerived + FromGameObject,
+{
+    async fn export_to_sql(
+        &self,
+        pool: &sqlx::SqlitePool,
+        meta_id: i64,
+        entity_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        self.get_internal()
+            .export_to_sql(pool, meta_id, entity_id)
+            .await
     }
 }

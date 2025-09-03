@@ -206,3 +206,16 @@ impl Localizable for Player {
         Ok(())
     }
 }
+
+impl Player {
+    /// Get a reference to the player's lineage.
+    pub fn get_lineage(&self) -> &Vec<LineageNode> {
+        &self.lineage
+    }
+
+    /// Get a reference to the player's character.
+    pub fn get_character(&self) -> &Option<GameRef<Character>> {
+        &self.character;
+        &self.character
+    }
+}

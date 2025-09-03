@@ -17,6 +17,7 @@ use super::{
 use jomini::common::{Date, PdsDate};
 
 use serde::{ser::SerializeMap, Serialize, Serializer};
+use crate::structures::SqlEntityBinding;
 
 pub type GameRef<T> = Shared<GameObjectEntity<T>>;
 
@@ -159,10 +160,9 @@ impl GameState {
     }
 
     /// Get the current date
-    pub fn get_current_date(&self) -> Option<Date> {
-        return self.current_date;
-    }
+    pub fn get_current_date(&self) -> Option<Date> { self.current_date }
 
+    pub fn get_offset_date(&self) -> Option<Date> { self.offset_date }
     /// Get a character by key
     pub fn get_character(&mut self, key: &GameId) -> GameRef<Character> {
         get_or_insert_dummy(&mut self.characters, key)
@@ -473,6 +473,38 @@ impl GameState {
         }
         events.sort_by(|a, b| a.0.cmp(&b.0));
         return Timeline::new(lifespans, self.current_date.unwrap().year(), events);
+    }
+
+    pub async fn sql_export_game_state(
+        &self,
+        pool: &sqlx::SqlitePool,
+        meta_id: i64,
+    ) -> Result<(), sqlx::Error>{
+        for (id, character) in &self.characters{
+            character.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, title) in &self.titles{
+            title.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, faith) in &self.faiths{
+            faith.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, culture) in &self.cultures{
+            culture.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, dynasty) in &self.dynasties{
+            dynasty.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, house) in &self.houses{
+            house.export_to_sql(pool, meta_id, *id as i64).await?;
+        }
+        for (id, memory) in &self.memories{
+            memory.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        for (id, artifact) in &self.artifacts{
+            artifact.export_to_sql(pool, meta_id, *id as i64).await?;
+        };
+        Ok(())
     }
 }
 

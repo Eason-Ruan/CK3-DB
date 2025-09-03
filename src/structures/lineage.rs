@@ -27,6 +27,13 @@ impl LineageNode {
     pub fn get_character(&self) -> GameRef<Character> {
         self.character.clone()
     }
+    pub fn get_date(&self) -> Date {self.date.clone()}
+    pub fn get_score(&self) -> i32 {self.score}
+    pub fn get_prestige(&self) -> i32 {self.prestige}
+    pub fn get_piety(&self) -> i32 {self.piety}
+    pub fn get_dread(&self) -> f32 {self.dread}
+    pub fn get_lifestyle(&self) -> Option<GameString> {self.lifestyle.clone()}
+    pub fn get_perks(&self) -> &Vec<GameString> {&self.perks}
 }
 
 impl FromGameObject for LineageNode {

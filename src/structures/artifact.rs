@@ -1,7 +1,6 @@
 use jomini::common::Date;
 use serde::Serialize;
-use sqlx::{Error, SqlitePool, query};
-use chrono::NaiveDateTime;
+use sqlx::{Error, SqlitePool};
 use crate::types::Wrapper;
 
 use super::{super::{

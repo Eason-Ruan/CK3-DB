@@ -130,6 +130,7 @@ pub fn process_section(
     players: &mut Vec<Player>,
 ) -> Result<(), ParsingError> {
     match i.get_name() {
+        // TODO: finish for more sections
         "meta_data" => {
             let parsed = i.parse()?;
             let map = parsed.as_map()?;

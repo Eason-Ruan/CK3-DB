@@ -88,6 +88,11 @@ impl Serialize for Localizer {
 }
 
 impl Localizer {
+    /// Gets all localization data
+    pub fn get_all_data(&self) -> &HashMap<String, GameString> {
+        &self.data
+    }
+
     /// Adds localization data from a directory.
     /// The path may be invalid, in which case the function will simply do nothing
     pub fn add_from_path<P: AsRef<Path>>(&mut self, path: P) {

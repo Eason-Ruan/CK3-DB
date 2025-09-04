@@ -368,13 +368,16 @@ async fn save_handler(State(state): State<AppState>, Json(payload): Json<SaveUpd
             });
         }
     }
-    let _ = state.tx.send(
+    if let Err(e) = state.tx.send(
         SaveJob {
             save_path: payload.save_path.clone(),
             game_path: payload.game_data.clone(),
             mod_paths: payload.mod_paths.clone(),
         }
-    );
+    ).await {
+        tracing::error!("发送存档处理任务失败: {}", e);
+        return Json(ApiResponse { code: 500, message: "派发任务失败（通道已关闭）".into() });
+    };
     Json(ApiResponse {
         code: 202,
         message: "Save handler executed".to_string(),

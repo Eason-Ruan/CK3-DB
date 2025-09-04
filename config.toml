@@ -1,8 +1,7 @@
-[target.x86_64-pc-windows-gnu]
 linker = "/usr/bin/x86_64-w64-mingw32-gcc"
 ar = "/usr/bin/x86_64-w64-mingw32-gcc-ar"
 
-database_url = "file:example.db"
+database_url = "sqlite://example.db"
 server_port = 3047
 
 save_path = ""

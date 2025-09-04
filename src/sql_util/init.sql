@@ -379,7 +379,7 @@ CREATE TABLE IF NOT EXISTS faith_tenets (
     FOREIGN KEY (meta_id, faith_id) REFERENCES faiths(meta_id, id)
 );
 
-CREATE TABLE faith_doctrines (
+CREATE TABLE IF NOT EXISTS faith_doctrines (
     faith_id INTEGER NOT NULL,
     doctrine_name TEXT NOT NULL,              -- 教义名称（已本地化）
     meta_id INTEGER NOT NULL REFERENCES game_metadata(id),
@@ -469,8 +469,7 @@ CREATE TRIGGER IF NOT EXISTS trg_players_seq_ai
 BEGIN
     -- 初始化对应 meta 的游标
     INSERT INTO players_id_seq(meta_id, last_id)
-    VALUES (NEW.meta_id, 0)
-    ON CONFLICT(meta_id) DO NOTHING;
+    VALUES (NEW.meta_id, 0);
 
     -- 递增并取号
     UPDATE players_id_seq
@@ -516,9 +515,8 @@ CREATE TRIGGER IF NOT EXISTS trg_lineages_seq_ai
     WHEN NEW.id IS NULL
 BEGIN
     -- 初始化对应 meta 的游标
-    INSERT INTO lineages_id_seq(meta_id, player_id, last_id)
-    VALUES (NEW.meta_id, NEW.player_id, 0)
-    ON CONFLICT(meta_id, player_id) DO NOTHING;
+    INSERT OR IGNORE INTO lineages_id_seq(meta_id, player_id, last_id)
+    VALUES (NEW.meta_id, NEW.player_id, 0);
 
     -- 递增并取号
     UPDATE lineages_id_seq

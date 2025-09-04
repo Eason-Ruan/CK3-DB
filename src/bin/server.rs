@@ -17,6 +17,7 @@ use std::{
     thread,
 };
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use sqlx::{Column, Row, SqlitePool};
 use sqlx::sqlite::SqliteRow;
@@ -97,7 +98,7 @@ struct AppState {
 }
 
 pub async fn load_config() -> Result<Config, Box<dyn error::Error>> {
-    let content = fs::read_to_string("config.toml")?;
+    let content = fs::read_to_string("./config.toml")?;
     let config: Config = toml::from_str(&content)?;
     Ok(config)
 }
@@ -110,33 +111,18 @@ async fn initialize_server(
 ) -> Result<(), Box<dyn error::Error>> {
     // 加载配置
     let config = load_config().await?;
-    
-    // 检查数据库文件是否存在
-    let db_path = std::path::Path::new(&config.database_url);
-    let db_exists = db_path.exists();
-    
-    tracing::info!("检查数据库文件: {}, 存在: {}", config.database_url, db_exists);
-    
-    // 连接到数据库（如果不存在会自动创建）
-    let pool = SqlitePool::connect(&config.database_url).await?;
-    
-    // 如果数据库是新创建的，执行初始化SQL
-    if !db_exists {
-        tracing::info!("数据库不存在，正在创建并初始化表结构...");
-        
-        // 读取并执行初始化SQL脚本
-        let init_sql = include_str!("../sql_util/init.sql");
 
-        // TODO: 这里可以考虑使用.migrations文件夹和sqlx的迁移功能
-        // 将SQL脚本按语句分割并执行
-        for statement in init_sql.split(';') {
-            let statement = statement.trim();
-            if !statement.is_empty() {
-                sqlx::query(statement).execute(&pool).await?;
-            }
+    let pool = SqlitePool::connect(&config.database_url).await?;
+
+    let init_sql = include_str!("../sql_util/init.sql");
+    match sqlx::query(init_sql)
+        .execute(&pool)
+        .await {
+        Ok(_) => tracing::info!("数据库构建完成"),
+        Err(e) => {
+            tracing::error!("SQL脚本执行失败: {}", e);
+            return Err(e.into());
         }
-        
-        tracing::info!("数据库表结构初始化完成");
     }
     
     // 查询game_metadata表中的save_file_name字段
@@ -196,6 +182,7 @@ async fn main() {
         rt.block_on(async move {
             while let Some(job) = rx.recv().await {
                 // 这里是后台 worker 的异步逻辑：
+                tracing::info!("收到存档处理任务: {}", job.save_path.clone());
                 let save_path = std::path::PathBuf::from(job.save_path.clone());
                 let mut ss = ss_work.as_ref().write().await;
                 ss.insert(save_path.file_name().unwrap().to_string_lossy().to_string(), SaveState::DataLoading);

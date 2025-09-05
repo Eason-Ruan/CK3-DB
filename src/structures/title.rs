@@ -435,7 +435,7 @@ impl SqlEntityBinding for Title {
             .await?;
         for (date, char_opt, action) in &self.history {
             sqlx::query(r#"
-                INSERT INTO title_history(title_id, date, holder_id, action, meta_id)
+                INSERT OR IGNORE INTO title_history(title_id, date, holder_id, action, meta_id)
                 VALUES (?, ?, ?, ?, ?)
                 "#
             )
@@ -449,7 +449,7 @@ impl SqlEntityBinding for Title {
         }
         for claim in &self.claims {
             sqlx::query(r#"
-                INSERT INTO title_claims (title_id, claimant_id, meta_id)
+                INSERT OR IGNORE INTO title_claims (title_id, claimant_id, meta_id)
                 VALUES (?, ?, ?)
                 "#
             )

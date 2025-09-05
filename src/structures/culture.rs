@@ -191,7 +191,7 @@ impl SqlEntityBinding for Culture {
     async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
         sqlx::query(
             r#"
-                    INSERT INTO cultures (id, name, ethos, heritage, martial, language, date, meta_id)
+                    INSERT OR IGNORE INTO cultures (id, name, ethos, heritage, martial, language, date, meta_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     "#
         )

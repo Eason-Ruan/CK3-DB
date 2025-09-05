@@ -204,7 +204,7 @@ impl SqlEntityBinding for Dynasty {
          for (perk, level) in &self.perks {
             sqlx::query(
                 r#"
-                INSERT INTO dynasty_perks (dynasty_id, perk_name, level, meta_id)
+                INSERT OR IGNORE INTO dynasty_perks (dynasty_id, perk_name, level, meta_id)
                 VALUES (?, ?, ?, ?)
                 "#
             )
@@ -218,7 +218,7 @@ impl SqlEntityBinding for Dynasty {
          for house in &self.houses {
              sqlx::query(
                     r#"
-                    INSERT INTO dynasty_houses(dynasty_id, house_id, meta_id)
+                    INSERT OR IGNORE INTO dynasty_houses(dynasty_id, house_id, meta_id)
                     VALUES (?, ?, ?)
                     "#
                 )

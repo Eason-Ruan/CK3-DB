@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS titles (
 );
 
 -- index for titles
+
 CREATE INDEX IF NOT EXISTS idx_titles_key ON titles(meta_id, key);
 CREATE INDEX IF NOT EXISTS idx_titles_tier ON titles(meta_id, tier);
 CREATE INDEX IF NOT EXISTS idx_titles_de_jure_liege ON titles(meta_id, de_jure_liege_id);
@@ -218,7 +219,7 @@ CREATE TABLE IF NOT EXISTS characters (
     id INTEGER,                    -- 角色ID (GameId)
     name TEXT NOT NULL,                       -- 角色名称（已本地化）
     nick TEXT,                                -- 绰号（已本地化）
-    birth_date DATE NOT NULL,                 -- 出生日期
+    birth_date DATE,                 -- 出生日期
     death_date DATE,                          -- 死亡日期
     death_reason TEXT,                        -- 死亡原因（已本地化）
     is_female BOOLEAN NOT NULL,               -- 性别

@@ -207,7 +207,7 @@ impl SqlEntityBinding for Memory {
         sqlx::query(
             r#"
                     INSERT OR IGNORE INTO memories (id, type, date, meta_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?)
                     "#
         )
             .bind(entity_id)

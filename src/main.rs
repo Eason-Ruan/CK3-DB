@@ -97,7 +97,7 @@ impl error::Error for UserError {
 ///
 fn main() -> Result<(), UserError> {
     if cfg!(debug_assertions) {
-        env::set_var("RUST_BACKTRACE", "1");
+        env::set_var("RUST_BACKTRACE", "full");
     }
     setup_panic!();
     //User IO

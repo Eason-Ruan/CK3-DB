@@ -592,7 +592,7 @@ impl Localizable for Character {
 impl SqlEntityBinding for Character{
     async fn export_to_sql(&self, pool: &SqlitePool, meta_id: i64, entity_id: i64) -> Result<(), Error> {
         sqlx::query(r#"
-            INSERT INTO characters(id, name, nick, birth_date, death_date, death_reason, is_female, is_dead, gold, piety, prestige, dread, strength, diplomacy_skill, martial_skill, stewardship_skill, learning_skill, intrigue_skill, prowess_skill, faith_id, culture_id, house_id, liege_id, dna, meta_id)
+            INSERT OR IGNORE INTO characters(id, name, nick, birth_date, death_date, death_reason, is_female, is_dead, gold, piety, prestige, dread, strength, diplomacy_skill, martial_skill, stewardship_skill, learning_skill, intrigue_skill, prowess_skill, faith_id, culture_id, house_id, liege_id, dna, meta_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#)
             .bind(entity_id)
@@ -623,7 +623,7 @@ impl SqlEntityBinding for Character{
             .await?;
         for t in &self.traits {
             sqlx::query(r#"
-            INSERT INTO character_traits(character_id, trait_name, meta_id)
+            INSERT OR IGNORE INTO character_traits(character_id, trait_name, meta_id)
             VALUES (?, ?, ?)
             "#)
                 .bind(entity_id)
@@ -719,7 +719,7 @@ impl SqlEntityBinding for Character{
         }
         for k in &self.kills {
             sqlx::query(r#"
-            INSERT INTO character_kills (killer_id, victim_id, meta_id)
+            INSERT OR IGNORE INTO character_kills (killer_id, victim_id, meta_id)
             VALUES (?, ?, ?)
             "#)
                 .bind(entity_id)
@@ -730,7 +730,7 @@ impl SqlEntityBinding for Character{
         }
         for l in &self.languages {
             sqlx::query(r#"
-            INSERT INTO character_languages (character_id, language, meta_id)
+            INSERT OR IGNORE INTO character_languages (character_id, language, meta_id)
             VALUES (?, ?, ?)
             "#)
                 .bind(entity_id)
@@ -743,7 +743,7 @@ impl SqlEntityBinding for Character{
             match v {
                 Vassal::Character(c) => {
                     sqlx::query(r#"
-                    INSERT INTO character_vassals (liege_id, vassal_id, meta_id)
+                    INSERT OR IGNORE INTO character_vassals (liege_id, vassal_id, meta_id)
                     VALUES (?, ?, ?)
                     "#)
                         .bind(entity_id)
@@ -755,7 +755,7 @@ impl SqlEntityBinding for Character{
                 Vassal::Reference(c) => {
                     if let Some(c) = c.get_internal().as_ref() {
                         sqlx::query(r#"
-                        INSERT INTO character_vassals (liege_id, vassal_id, meta_id)
+                        INSERT OR IGNORE INTO character_vassals (liege_id, vassal_id, meta_id)
                         VALUES (?, ?, ?)
                         "#)
                             .bind(entity_id)
@@ -769,7 +769,7 @@ impl SqlEntityBinding for Character{
         }
         for a in &self.artifacts {
             sqlx::query(r#"
-            INSERT INTO character_artifacts (character_id, artifact_id, meta_id)
+            INSERT OR IGNORE INTO character_artifacts (character_id, artifact_id, meta_id)
             VALUES (?, ?, ?)
             "#)
                 .bind(entity_id)

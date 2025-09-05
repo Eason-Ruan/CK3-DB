@@ -9,6 +9,7 @@ use derive_more::From;
 use serde_json;
 use time::{OffsetDateTime};
 use std::{
+    str::FromStr,
     error,
     fmt::{self, Debug, Display, Formatter},
     fs,
@@ -20,7 +21,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use sqlx::{Column, Row, SqlitePool};
-use sqlx::sqlite::SqliteRow;
+use sqlx::pool::PoolConnection;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use tokio::runtime::Builder;
 use tokio::sync::{mpsc, RwLock};
 /// A submodule that handles save file parsing
@@ -106,17 +108,15 @@ pub async fn load_config() -> Result<Config, Box<dyn error::Error>> {
 /// 异步初始化函数
 /// 检查并创建SQLite数据库，查询metadata表并填充SaveStates，最后将ServerState设置为Running
 async fn initialize_server(
+    pool: &SqlitePool,
     save_states: SaveStates,
     server_state: Arc<RwLock<ServerState>>,
 ) -> Result<(), Box<dyn error::Error>> {
-    // 加载配置
-    let config = load_config().await?;
 
-    let pool = SqlitePool::connect(&config.database_url).await?;
 
     let init_sql = include_str!("../sql_util/init.sql");
     match sqlx::query(init_sql)
-        .execute(&pool)
+        .execute(pool)
         .await {
         Ok(_) => tracing::info!("数据库构建完成"),
         Err(e) => {
@@ -127,7 +127,7 @@ async fn initialize_server(
     
     // 查询game_metadata表中的save_file_name字段
     let rows = sqlx::query("SELECT save_file_name FROM game_metadata")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await?;
     
     // 填充SaveStates
@@ -147,9 +147,7 @@ async fn initialize_server(
         *state = ServerState::Running;
         tracing::info!("服务器状态已更新为Running");
     }
-    
-    // 关闭数据库连接
-    pool.close().await;
+
     Ok(())
 }
 
@@ -162,12 +160,17 @@ async fn main() {
     let (tx, mut rx) = mpsc::channel::<SaveJob>(8);
     let save_states: SaveStates = Arc::new(RwLock::new(HashMap::new()));
     let server_state = Arc::new(RwLock::new(ServerState::Initializing));
-    
+
+    // 加载配置
+    let config = load_config().await.unwrap();
+    let opts = SqliteConnectOptions::from_str(&config.database_url).unwrap().foreign_keys(false);
+    let pool = SqlitePoolOptions::new().connect_with(opts).await.unwrap();
+
     // 执行初始化
     let save_states_clone = save_states.clone();
     let server_state_clone = server_state.clone();
     
-    match initialize_server(save_states_clone, server_state_clone).await {
+    match initialize_server(&pool, save_states_clone, server_state_clone).await {
         Ok(_) => {
             tracing::info!("服务器初始化成功");
         }
@@ -191,7 +194,8 @@ async fn main() {
                 let config = load_config().await.unwrap();
 
                 // 连接到数据库
-                let pool = SqlitePool::connect(&config.database_url).await.unwrap();
+                let opts = SqliteConnectOptions::from_str(&config.database_url).unwrap().foreign_keys(false);
+                let pool = SqlitePoolOptions::new().connect_with(opts).await.unwrap();
 
                 // 转换mod_paths为PathBuf
                 let mod_paths: Vec<std::path::PathBuf> = job
@@ -204,19 +208,14 @@ async fn main() {
                     Ok(_) => {
                         tracing::info!("存档文件处理成功: {}", job.save_path);
 
-                        // 关闭数据库连接
-                        pool.close().await;
-
                     }
                     Err(e) => {
                         tracing::error!("存档文件处理失败: {}", e);
-
-                        // 关闭数据库连接
-                        pool.close().await;
                     }
                 }
                 let mut ss = ss_work.as_ref().write().await;
                 ss.insert(save_path.file_name().unwrap().to_string_lossy().to_string(), SaveState::Prepared);
+                tracing::info!("存档文件状态更新为Prepared: {}", job.save_path);
             }
         });
     });
@@ -454,7 +453,7 @@ async fn query_handler(State(state): State<AppState>, Json(payload): Json<QueryR
             "message": "不安全的SQL查询语句，只允许SELECT查询".to_string(),
         }));
     }
-    
+
     // 加载配置
     let config = match load_config().await {
         Ok(config) => config,
@@ -466,9 +465,10 @@ async fn query_handler(State(state): State<AppState>, Json(payload): Json<QueryR
             }));
         }
     };
-    
+
     // 连接到数据库
-    let pool = match SqlitePool::connect(&config.database_url).await {
+    let opts = SqliteConnectOptions::from_str(&config.database_url).unwrap().foreign_keys(false);
+    let pool = match SqlitePoolOptions::new().connect_with(opts).await {
         Ok(pool) => pool,
         Err(e) => {
             tracing::error!("数据库连接失败: {}", e);
@@ -478,12 +478,11 @@ async fn query_handler(State(state): State<AppState>, Json(payload): Json<QueryR
             }));
         }
     };
-    
+
     // 执行查询
     match sqlx::query(&payload.sql).fetch_all(&pool).await {
         Ok(rows) => {
             // 关闭数据库连接
-            pool.close().await;
             let rows_json: Vec<Value> = rows.iter().map(sqlite_row_to_json).collect();
 
             Json(json!({
@@ -497,8 +496,7 @@ async fn query_handler(State(state): State<AppState>, Json(payload): Json<QueryR
         }
         Err(e) => {
             // 关闭数据库连接
-            pool.close().await;
-            
+
             tracing::error!("SQL查询执行失败: {}", e);
             Json(json!({
                 "code": 500,

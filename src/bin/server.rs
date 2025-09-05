@@ -24,7 +24,7 @@ use sqlx::{Column, Row, SqlitePool};
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use tokio::runtime::Builder;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 /// A submodule that handles save file parsing
 use ck3_history_extractor::parser;
 use parser::{SaveFileError};
@@ -105,6 +105,21 @@ pub async fn load_config() -> Result<Config, Box<dyn error::Error>> {
     Ok(config)
 }
 
+static mut KEEPER: Option<Arc<Mutex<SqlitePool>>> = None;
+
+async fn init_keeper(database_url: &str) -> anyhow::Result<()> {
+    let opts = SqliteConnectOptions::from_str(database_url)?
+        .foreign_keys(false);
+    let conn = SqlitePoolOptions::new()
+        .min_connections(1)
+        .connect_with(opts)
+        .await?;
+    unsafe {
+        KEEPER = Some(Arc::new(Mutex::new(conn)));
+    }
+    Ok(())
+}
+
 /// 异步初始化函数
 /// 检查并创建SQLite数据库，查询metadata表并填充SaveStates，最后将ServerState设置为Running
 async fn initialize_server(
@@ -163,6 +178,7 @@ async fn main() {
 
     // 加载配置
     let config = load_config().await.unwrap();
+    init_keeper(&config.database_url).await.unwrap();
     let opts = SqliteConnectOptions::from_str(&config.database_url).unwrap().foreign_keys(false);
     let pool = SqlitePoolOptions::new().connect_with(opts).await.unwrap();
 

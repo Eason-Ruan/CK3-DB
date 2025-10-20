@@ -220,7 +220,7 @@ async fn main() {
                     .map(|v| v.iter().map(std::path::PathBuf::from).collect())
                     .unwrap_or_default();
                 // 使用data_proc处理存档文件
-                match data_proc(&save_path, &mod_paths.clone(), "chinese", &pool).await {
+                match data_proc(&save_path, &mod_paths.clone(), "simp_chinese", &pool).await {
                     Ok(_) => {
                         tracing::info!("存档文件处理成功: {}", job.save_path);
 
